@@ -1,4 +1,4 @@
-function randomBelow(limit) {
+export function randomBelow(limit) {
   if (limit <= 0) throw new Error("抽样上限必须大于 0");
   const span = 0x100000000;
   const cutoff = span - (span % limit);

@@ -32,9 +32,10 @@
           <div class="actions">
             <button type="button" id="gen-one">生成 1 注</button>
             <button type="button" id="gen-five" class="ghost">生成 5 注</button>
+            <button type="button" id="gen-draw" class="machine">摇号</button>
           </div>
           <div id="stage" class="stage" hidden>
-            <canvas id="stage-canvas"></canvas>
+            <canvas id="stage-canvas" aria-hidden="true"></canvas>
             <p id="stage-label" class="stage-label">第 1 注</p>
           </div>
           <div id="tickets" class="tickets" aria-live="polite"></div>

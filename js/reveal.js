@@ -1,4 +1,5 @@
 import * as THREE from "../vendor/three.module.min.js";
+import { createMachine } from "./machine.js";
 
 const BALL_RADIUS = 0.4;
 const SPACING = 0.92;
@@ -25,17 +26,67 @@ function numberTexture(text) {
   return texture;
 }
 
+function studioEnvironment(renderer) {
+  const paint = (top, bottom, glow) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    const gradient = context.createLinearGradient(0, 0, 0, 128);
+    gradient.addColorStop(0, top);
+    gradient.addColorStop(1, bottom);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 128, 128);
+    if (glow) {
+      const light = context.createRadialGradient(64, 42, 6, 64, 50, 62);
+      light.addColorStop(0, "rgba(255, 246, 232, 0.9)");
+      light.addColorStop(0.42, "rgba(214, 224, 236, 0.28)");
+      light.addColorStop(1, "rgba(214, 224, 236, 0)");
+      context.fillStyle = light;
+      context.fillRect(0, 0, 128, 128);
+    }
+    return canvas;
+  };
+  const cube = new THREE.CubeTexture([
+    paint("#314058", "#1a2230", false),
+    paint("#2a384c", "#161c28", false),
+    paint("#e4edf6", "#8ea2b8", true),
+    paint("#10141c", "#0c1016", false),
+    paint("#465c76", "#1c2634", true),
+    paint("#2c3a4e", "#161c28", false),
+  ]);
+  cube.colorSpace = THREE.SRGBColorSpace;
+  cube.needsUpdate = true;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const environment = pmrem.fromCubemap(cube).texture;
+  pmrem.dispose();
+  cube.dispose();
+  return environment;
+}
+
+function vividColor(color) {
+  const hsl = { h: 0, s: 0, l: 0 };
+  new THREE.Color(color).getHSL(hsl);
+  return new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s + 0.22), hsl.l);
+}
+
+function plasticMaterial(color) {
+  return new THREE.MeshPhysicalMaterial({
+    color: vividColor(color),
+    metalness: 0,
+    roughness: 0.26,
+    clearcoat: 0.58,
+    clearcoatRoughness: 0.16,
+    reflectivity: 0.5,
+    envMapIntensity: 0.32,
+  });
+}
+
 function makeBall(number, color) {
   const group = new THREE.Group();
   const sphere = new THREE.Mesh(
     new THREE.SphereGeometry(BALL_RADIUS, 48, 32),
-    new THREE.MeshPhysicalMaterial({
-      color,
-      metalness: 0.22,
-      roughness: 0.24,
-      clearcoat: 1,
-      clearcoatRoughness: 0.12,
-    }),
+    plasticMaterial(color),
   );
   const label = new THREE.Mesh(
     new THREE.PlaneGeometry(0.52, 0.32),
@@ -65,16 +116,23 @@ export function createStage(canvas) {
 
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.16;
 
   const scene = new THREE.Scene();
+  scene.environment = studioEnvironment(renderer);
+  scene.environmentIntensity = 0.92;
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 40);
   camera.position.set(0, 0.35, 8.4);
 
-  scene.add(new THREE.HemisphereLight(0xfff6ea, 0x141820, 1.1));
-  const key = new THREE.DirectionalLight(0xffffff, 2.4);
-  key.position.set(3, 5, 6);
+  scene.add(new THREE.HemisphereLight(0xfff6ee, 0x2e3c52, 0.4));
+  const key = new THREE.DirectionalLight(0xfff8f2, 1.05);
+  key.position.set(2.2, 4.2, 5);
   scene.add(key);
-  const rim = new THREE.PointLight(0xff5a45, 18, 14);
+  const fill = new THREE.DirectionalLight(0xd5e2f4, 0.38);
+  fill.position.set(-4, 1.6, 2.4);
+  scene.add(fill);
+  const rim = new THREE.PointLight(0xff5a45, 0.4, 12);
   rim.position.set(-2.4, 1.2, 1.5);
   scene.add(rim);
 
@@ -140,20 +198,38 @@ export function createStage(canvas) {
     requestAnimationFrame(tick);
   }
 
+  const machine = createMachine({ scene, camera, renderer, resize, rim });
+
   return {
     resize,
     pause() {
       running = false;
+      machine.pause();
     },
     resume() {
-      if (balls.length === 0) return;
-      start();
+      if (machine.active) machine.resume();
+      else if (balls.length > 0) start();
     },
     clear() {
+      machine.stop();
+      floor.visible = true;
       clearBalls();
       running = false;
     },
+    draw(plan, colors, hooks) {
+      clearBalls();
+      running = false;
+      floor.visible = false;
+      rim.color.set(colors.main);
+      return machine.play(plan, colors, hooks);
+    },
+    stopDraw() {
+      machine.stop();
+      floor.visible = true;
+    },
     show(numbers, colors) {
+      machine.stop();
+      floor.visible = true;
       clearBalls();
       rim.color.set(colors.main);
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

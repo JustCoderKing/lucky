@@ -1,6 +1,7 @@
+import { ballCaption, planDraw } from "./draw-plan.js";
 import { GAMES, jackpotCount, quietCount } from "./games.js";
 import { createStage } from "./reveal.js";
-import { hasConsecutive, sampleTicket } from "./sample.js";
+import { hasConsecutive, randomBelow, sampleTicket } from "./sample.js";
 import { buildTrend } from "./trend.js";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -97,8 +98,10 @@ function renderLatest() {
 }
 
 function renderTickets() {
+  stageNode.classList.remove("drawing");
   stageNode.hidden = true;
-  if (reveal) reveal.pause();
+  reveal?.stopDraw();
+  reveal?.pause();
   const list = state.tickets[state.game];
   ticketsNode.replaceChildren();
   if (list.length === 0) {
@@ -290,9 +293,22 @@ function showTab(tab) {
   else if (!stageNode.hidden) reveal?.resume();
 }
 
+function actionButtons() {
+  return document.querySelectorAll("#gen-one, #gen-five, #gen-draw");
+}
+
+let actionToken = 0;
+
+function remember(ticket) {
+  const summary = document.createElement("p");
+  summary.className = "visually-hidden";
+  summary.textContent = numbered(ticket).map((item) => pad(item.number)).join(" ");
+  ticketsNode.replaceChildren(summary);
+}
+
 async function generate(count) {
-  const buttons = document.querySelectorAll("#gen-one, #gen-five");
-  buttons.forEach((button) => {
+  const token = ++actionToken;
+  actionButtons().forEach((button) => {
     button.disabled = true;
   });
   try {
@@ -302,10 +318,8 @@ async function generate(count) {
     }
     state.tickets[state.game] = next;
     if (count === 1 && reveal) {
-      const summary = document.createElement("p");
-      summary.className = "visually-hidden";
-      summary.textContent = numbered(next[0]).map((item) => pad(item.number)).join(" ");
-      ticketsNode.replaceChildren(summary);
+      remember(next[0]);
+      stageNode.classList.remove("drawing");
       stageNode.hidden = false;
       stageLabel.textContent = "第 1 注";
       await reveal.show(numbered(next[0]), palette());
@@ -313,9 +327,53 @@ async function generate(count) {
       renderTickets();
     }
   } finally {
-    buttons.forEach((button) => {
-      button.disabled = false;
-    });
+    if (token === actionToken) {
+      actionButtons().forEach((button) => {
+        button.disabled = false;
+      });
+    }
+  }
+}
+
+async function generateDraw() {
+  const token = ++actionToken;
+  actionButtons().forEach((button) => {
+    button.disabled = true;
+  });
+  try {
+    const ticket = sampleTicket(game(), state.avoid);
+    state.tickets[state.game] = [ticket];
+    if (!reveal) {
+      renderTickets();
+      return;
+    }
+    remember(ticket);
+    stageNode.hidden = false;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      stageNode.classList.remove("drawing");
+      stageLabel.textContent = "第 1 注";
+      await reveal.show(numbered(ticket), palette());
+      return;
+    }
+    const current = game();
+    const plan = planDraw(ticket, current, randomBelow);
+    const mark = (item) => ({ ...item, caption: ballCaption(item, current) });
+    stageNode.classList.add("drawing");
+    stageLabel.textContent = "搅球";
+    reveal.resize();
+    const status = await reveal.draw(
+      { winners: plan.winners.map(mark), fillers: plan.fillers.map(mark) },
+      palette(),
+      { onLabel: (text) => { stageLabel.textContent = text; } },
+    );
+    if (token !== actionToken || status !== "done") return;
+  } finally {
+    if (token === actionToken) {
+      actionButtons().forEach((button) => {
+        button.disabled = false;
+      });
+    }
   }
 }
 
@@ -350,6 +408,7 @@ function bind() {
   });
   document.querySelector("#gen-one").addEventListener("click", () => generate(1));
   document.querySelector("#gen-five").addEventListener("click", () => generate(5));
+  document.querySelector("#gen-draw").addEventListener("click", () => generateDraw());
   historyMore.addEventListener("click", () => {
     state.historyShown += 40;
     renderHistory();
