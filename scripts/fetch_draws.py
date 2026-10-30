@@ -6,9 +6,9 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-START = datetime(2016, 10, 30)
-END = datetime(2026, 10, 30)
+START = datetime(2016, 10, 30).date()
 OUT = Path(__file__).resolve().parents[1] / "data" / "draws.json"
+ISSUE_START = "16001"
 
 
 def fetch(url, referer):
@@ -24,12 +24,17 @@ def table_rows(html):
     return re.findall(r'<tr class="t_tr1">(.*?)</tr>', html, flags=re.S)
 
 
-def in_window(date_text):
-    day = datetime.strptime(date_text, "%Y-%m-%d")
-    return START <= day <= END
+def issue_end_for(day):
+    """期号为年份后两位加三位序号，用当年 999 期作为请求上限。"""
+    return f"{day.year % 100:02d}999"
 
 
-def parse_ssq(html):
+def in_window(date_text, end):
+    day = datetime.strptime(date_text, "%Y-%m-%d").date()
+    return START <= day <= end
+
+
+def parse_ssq(html, end):
     draws = []
     skipped = 0
     for row in table_rows(html):
@@ -40,7 +45,7 @@ def parse_ssq(html):
         if not (issue and date and len(reds) == 6 and len(blues) >= 1):
             skipped += 1
             continue
-        if not in_window(date.group(1)):
+        if not in_window(date.group(1), end):
             continue
         main = [int(n) for n in reds]
         extra = [int(blues[0])]
@@ -61,7 +66,7 @@ def parse_ssq(html):
     return draws, skipped
 
 
-def parse_dlt(html):
+def parse_dlt(html, end):
     draws = []
     skipped = 0
     for row in table_rows(html):
@@ -72,7 +77,7 @@ def parse_dlt(html):
         if not (issue and date and len(front) == 5 and len(back) == 2):
             skipped += 1
             continue
-        if not in_window(date.group(1)):
+        if not in_window(date.group(1), end):
             continue
         main = [int(n) for n in front]
         extra = [int(n) for n in back]
@@ -98,16 +103,20 @@ def newest_first(draws):
 
 
 def main():
+    end = datetime.now().date()
+    issue_end = issue_end_for(end)
     ssq_html = fetch(
-        "https://datachart.500.com/ssq/history/newinc/history.php?start=16001&end=26150",
+        "https://datachart.500.com/ssq/history/newinc/history.php"
+        f"?start={ISSUE_START}&end={issue_end}",
         "https://datachart.500.com/ssq/",
     )
     dlt_html = fetch(
-        "https://datachart.500.com/dlt/history/newinc/history.php?start=16001&end=26150",
+        "https://datachart.500.com/dlt/history/newinc/history.php"
+        f"?start={ISSUE_START}&end={issue_end}",
         "https://datachart.500.com/dlt/",
     )
-    ssq, ssq_skip = parse_ssq(ssq_html)
-    dlt, dlt_skip = parse_dlt(dlt_html)
+    ssq, ssq_skip = parse_ssq(ssq_html, end)
+    dlt, dlt_skip = parse_dlt(dlt_html, end)
     ssq = newest_first(ssq)
     dlt = newest_first(dlt)
     if len(ssq) < 1400 or len(dlt) < 1400:
@@ -115,12 +124,13 @@ def main():
     payload = {
         "source": "500.com datachart",
         "from": "2016-10-30",
-        "to": END.strftime("%Y-%m-%d"),
+        "to": end.isoformat(),
         "ssq": ssq,
         "dlt": dlt,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print("through", end.isoformat(), "issue_end", issue_end)
     print("ssq", len(ssq), "skipped", ssq_skip, ssq[0], "oldest", ssq[-1]["date"])
     print("dlt", len(dlt), "skipped", dlt_skip, dlt[0], "oldest", dlt[-1]["date"])
     print("wrote", OUT)

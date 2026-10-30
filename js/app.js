@@ -31,14 +31,24 @@ function pad(number) {
   return String(number).padStart(2, "0");
 }
 
-function officialIssue(issue) {
-  return issue.length === 5 ? `20${issue}` : issue;
+function periodLabel(issue) {
+  return `第${Number(issue.slice(-3))}期`;
+}
+
+function dateParts(iso) {
+  const [year, month, day] = iso.split("-");
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return { year, month, day, weekday: WEEKDAYS[date.getDay()] };
 }
 
 function formatDate(iso) {
-  const [year, month, day] = iso.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  return `${iso} 周${WEEKDAYS[date.getDay()]}`;
+  const { year, month, day, weekday } = dateParts(iso);
+  return `${year}年${month}月${day}日 周${weekday}`;
+}
+
+function formatMonthDay(iso) {
+  const { month, day } = dateParts(iso);
+  return `${month}月${day}日`;
 }
 
 function game() {
@@ -73,11 +83,12 @@ function renderLatest() {
   latestNode.replaceChildren();
   const meta = document.createElement("div");
   meta.className = "meta";
-  const issue = document.createElement("strong");
-  issue.textContent = `最新 ${officialIssue(draw.issue)}`;
-  const date = document.createElement("span");
+  const date = document.createElement("strong");
+  date.className = "date";
   date.textContent = formatDate(draw.date);
-  meta.append(issue, date);
+  const issue = document.createElement("span");
+  issue.textContent = periodLabel(draw.issue);
+  meta.append(date, issue);
   latestNode.append(meta, ballRow(draw));
 }
 
@@ -150,7 +161,7 @@ function renderTrend() {
   const headRow = document.createElement("tr");
   const issueHead = document.createElement("th");
   issueHead.className = "issue";
-  issueHead.textContent = "期号";
+  issueHead.textContent = "日期";
   headRow.append(issueHead);
   for (let number = 1; number <= max; number += 1) {
     const cell = document.createElement("th");
@@ -165,7 +176,8 @@ function renderTrend() {
     const issue = document.createElement("th");
     issue.className = "issue";
     issue.scope = "row";
-    issue.textContent = officialIssue(row.issue);
+    issue.textContent = formatMonthDay(row.date);
+    issue.title = `${formatDate(row.date)} ${periodLabel(row.issue)}`;
     tr.append(issue);
     row.cells.forEach((cell) => {
       const td = document.createElement("td");
@@ -204,18 +216,21 @@ function renderTrend() {
 function renderHistory() {
   const list = draws();
   const shown = list.slice(0, state.historyShown);
-  historyMeta.textContent = `${game().name} ${numberFormat.format(list.length)} 期，${list[list.length - 1].date} 至 ${list[0].date}。数据来自 500.com 开奖表。`;
+  const oldest = formatDate(list[list.length - 1].date).replace(/ 周.$/, "");
+  const newest = formatDate(list[0].date).replace(/ 周.$/, "");
+  historyMeta.textContent = `${game().name} ${numberFormat.format(list.length)} 期，${oldest}至${newest}。数据来自 500.com 开奖表。`;
   historyList.replaceChildren();
   shown.forEach((draw) => {
     const card = document.createElement("article");
     card.className = "draw";
     const meta = document.createElement("div");
     meta.className = "meta";
-    const issue = document.createElement("strong");
-    issue.textContent = officialIssue(draw.issue);
-    const date = document.createElement("span");
+    const date = document.createElement("strong");
+    date.className = "date";
     date.textContent = formatDate(draw.date);
-    meta.append(issue, date);
+    const issue = document.createElement("span");
+    issue.textContent = periodLabel(draw.issue);
+    meta.append(date, issue);
     card.append(meta, ballRow(draw));
     historyList.append(card);
   });
