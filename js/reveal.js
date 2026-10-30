@@ -216,6 +216,13 @@ export function createStage(canvas) {
       clearBalls();
       running = false;
     },
+    preview(items, colors) {
+      clearBalls();
+      running = false;
+      floor.visible = false;
+      rim.color.set(colors.main);
+      machine.present(items, colors);
+    },
     draw(plan, colors, hooks) {
       clearBalls();
       running = false;

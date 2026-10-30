@@ -45,6 +45,7 @@ export function createMachine(ctx) {
   const force = new Vec3();
   let active = false;
   let paused = false;
+  let preview = false;
   let settled = false;
   let holding = false;
   let blowing = true;
@@ -94,6 +95,7 @@ export function createMachine(ctx) {
   function teardown() {
     active = false;
     paused = false;
+    preview = false;
     holding = false;
     if (root) {
       const geometries = new Set();
@@ -190,24 +192,25 @@ export function createMachine(ctx) {
 
   function buildBlower() {
     const housing = new THREE.MeshLambertMaterial({ color: 0x4d92dc });
-    const dark = new THREE.MeshLambertMaterial({ color: 0x2d64b0 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.4, 0.38), housing);
-    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.16, 0.32, 16), dark);
+    const dark = new THREE.MeshLambertMaterial({ color: 0x1d4e8c });
+    const bladeMaterial = new THREE.MeshLambertMaterial({ color: 0xf4fbff });
+    const shroud = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.045, 10, 28), housing);
+    const back = new THREE.Mesh(new THREE.CircleGeometry(0.2, 24), dark);
+    back.position.z = -0.05;
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.15, 0.34, 16), dark);
     nozzle.rotation.z = Math.PI / 2;
-    nozzle.position.x = -0.36;
+    nozzle.position.x = -0.46;
     fan = new THREE.Group();
-    fan.position.set(-0.18, 0, 0);
     for (let index = 0; index < 3; index += 1) {
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.2, 0.055), housing);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.22, 0.018), bladeMaterial);
       blade.position.y = 0.11;
       const arm = new THREE.Group();
-      arm.rotation.x = index * ((Math.PI * 2) / 3);
+      arm.rotation.z = index * ((Math.PI * 2) / 3);
       arm.add(blade);
       fan.add(arm);
     }
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.08, 12), dark);
-    hub.rotation.z = Math.PI / 2;
-    hub.position.copy(fan.position);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 12), dark);
+    hub.rotation.x = Math.PI / 2;
     const air = new THREE.Mesh(
       new THREE.ConeGeometry(0.2, 0.72, 14, 1, true),
       new THREE.MeshBasicMaterial({
@@ -221,7 +224,7 @@ export function createMachine(ctx) {
     air.rotation.z = Math.PI / 2;
     air.position.x = -0.72;
     const unit = new THREE.Group();
-    unit.add(body, nozzle, hub, fan, air);
+    unit.add(shroud, back, nozzle, hub, fan, air);
     unit.position.set(CHAMBER.x + GLASS_R + 0.72, CHAMBER.y - WALL_H / 2 + 0.48, CHAMBER.z + 0.02);
     root.add(unit);
   }
@@ -433,11 +436,22 @@ export function createMachine(ctx) {
   function frame() {
     if (!active) return;
     if (!paused && !holding) requestAnimationFrame(frame);
+    if (preview) {
+      const now = performance.now();
+      const delta = Math.min(50, Math.max(0, now - (frame.last || now)));
+      frame.last = now;
+      resize();
+      if (fan) fan.rotation.z += 0.55;
+      stepPhysics(delta || 16);
+      actors.forEach(copyBody);
+      renderer.render(scene, camera);
+      return;
+    }
     const elapsed = elapsedNow();
     const delta = Math.min(50, Math.max(0, elapsed - frame.last));
     frame.last = elapsed;
     resize();
-    if (fan) fan.rotation.x += 0.62;
+    if (fan) fan.rotation.z += 0.85;
     const after = elapsed - MIX_MS;
     const slotMs = EXIT_MS + EXIT_GAP_MS;
     if (after >= 0 && winnerActors.length > 0) {
@@ -465,9 +479,52 @@ export function createMachine(ctx) {
     renderer.render(scene, camera);
   }
 
+  function mount(items, colors) {
+    adoptCamera();
+    if (rim) rim.color.set(colors.main);
+    sphereGeometry = new THREE.SphereGeometry(BALL_R, 40, 28);
+    labelGeometry = new THREE.PlaneGeometry(BALL_R * 1.55, BALL_R * 0.96);
+    root = new THREE.Group();
+    scene.add(root);
+    buildChamber();
+    buildBlower();
+    const material = buildWorld();
+    const main = new THREE.Color(colors.main);
+    const extra = new THREE.Color(colors.extra);
+    const layout = spots(items.length);
+    for (let index = layout.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      const held = layout[index];
+      layout[index] = layout[swap];
+      layout[swap] = held;
+    }
+    items.forEach((item, index) => {
+      const color = item.zone === "extra" ? extra : main;
+      spawn(item, color, layout[index], material, false);
+    });
+    resize();
+  }
+
+  function present(items, colors) {
+    stop();
+    active = true;
+    preview = true;
+    paused = false;
+    settled = true;
+    holding = false;
+    blowing = false;
+    frozen = false;
+    simTime = 0;
+    accumulator = 0;
+    frame.last = 0;
+    mount(items, colors);
+    requestAnimationFrame(frame);
+  }
+
   function play(plan, colors, hooks) {
     stop();
     active = true;
+    preview = false;
     paused = false;
     settled = false;
     holding = false;
@@ -525,6 +582,7 @@ export function createMachine(ctx) {
       return active || root !== null;
     },
     play,
+    present,
     pause() {
       if (!active || paused) return;
       paused = true;

@@ -97,11 +97,30 @@ function renderLatest() {
   latestNode.append(meta, ballRow(draw));
 }
 
+function poolItems(current) {
+  const items = [];
+  for (let number = 1; number <= current.mainMax; number += 1) {
+    items.push({ number, zone: "main" });
+  }
+  for (let number = 1; number <= current.extraMax; number += 1) {
+    items.push({ number, zone: "extra" });
+  }
+  return items;
+}
+
+function showMachine() {
+  if (!reveal) {
+    stageNode.hidden = true;
+    return;
+  }
+  stageNode.hidden = false;
+  stageNode.classList.add("drawing");
+  stageLabel.textContent = "全部号码";
+  reveal.preview(poolItems(game()), palette());
+}
+
 function renderTickets() {
-  stageNode.classList.remove("drawing");
-  stageNode.hidden = true;
-  reveal?.stopDraw();
-  reveal?.pause();
+  showMachine();
   const list = state.tickets[state.game];
   ticketsNode.replaceChildren();
   if (list.length === 0) {
