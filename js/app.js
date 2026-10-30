@@ -1,4 +1,5 @@
 import { GAMES, jackpotCount, quietCount } from "./games.js";
+import { createStage } from "./reveal.js";
 import { hasConsecutive, sampleTicket } from "./sample.js";
 import { buildTrend } from "./trend.js";
 
@@ -26,6 +27,9 @@ const historyList = document.querySelector("#history-list");
 const historyMeta = document.querySelector("#history-meta");
 const historyMore = document.querySelector("#history-more");
 const poolSwitch = document.querySelector("#pool-switch");
+const stageNode = document.querySelector("#stage");
+const stageLabel = document.querySelector("#stage-label");
+const reveal = createStage(document.querySelector("#stage-canvas"));
 
 function pad(number) {
   return String(number).padStart(2, "0");
@@ -93,6 +97,8 @@ function renderLatest() {
 }
 
 function renderTickets() {
+  stageNode.hidden = true;
+  if (reveal) reveal.pause();
   const list = state.tickets[state.game];
   ticketsNode.replaceChildren();
   if (list.length === 0) {
@@ -104,13 +110,28 @@ function renderTickets() {
   }
   list.forEach((ticket, index) => {
     const card = document.createElement("article");
-    card.className = "ticket";
+    card.className = "ticket enter";
     const label = document.createElement("p");
     label.className = "ticket-index";
     label.textContent = `第 ${index + 1} 注`;
     card.append(label, ballRow(ticket));
     ticketsNode.append(card);
   });
+}
+
+function palette() {
+  const style = getComputedStyle(app);
+  return {
+    main: style.getPropertyValue("--main").trim(),
+    extra: style.getPropertyValue("--extra").trim(),
+  };
+}
+
+function numbered(ticket) {
+  return [
+    ...ticket.main.map((number) => ({ number, zone: "main" })),
+    ...ticket.extra.map((number) => ({ number, zone: "extra" })),
+  ];
 }
 
 function renderOdds() {
@@ -265,15 +286,37 @@ function showTab(tab) {
     else button.removeAttribute("aria-current");
   });
   window.scrollTo(0, 0);
+  if (tab !== "pick") reveal?.pause();
+  else if (!stageNode.hidden) reveal?.resume();
 }
 
-function generate(count) {
-  const next = [];
-  for (let index = 0; index < count; index += 1) {
-    next.push(sampleTicket(game(), state.avoid));
+async function generate(count) {
+  const buttons = document.querySelectorAll("#gen-one, #gen-five");
+  buttons.forEach((button) => {
+    button.disabled = true;
+  });
+  try {
+    const next = [];
+    for (let index = 0; index < count; index += 1) {
+      next.push(sampleTicket(game(), state.avoid));
+    }
+    state.tickets[state.game] = next;
+    if (count === 1 && reveal) {
+      const summary = document.createElement("p");
+      summary.className = "visually-hidden";
+      summary.textContent = numbered(next[0]).map((item) => pad(item.number)).join(" ");
+      ticketsNode.replaceChildren(summary);
+      stageNode.hidden = false;
+      stageLabel.textContent = "第 1 注";
+      await reveal.show(numbered(next[0]), palette());
+    } else {
+      renderTickets();
+    }
+  } finally {
+    buttons.forEach((button) => {
+      button.disabled = false;
+    });
   }
-  state.tickets[state.game] = next;
-  renderTickets();
 }
 
 function bind() {
@@ -325,7 +368,10 @@ async function boot() {
     app.style.setProperty("--header-h", `${header.offsetHeight}px`);
   };
   applyHeader();
-  window.addEventListener("resize", applyHeader);
+  window.addEventListener("resize", () => {
+    applyHeader();
+    reveal?.resize();
+  });
 }
 
 boot().catch((error) => {
