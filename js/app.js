@@ -2,6 +2,13 @@ import { ballCaption, planDraw } from "./draw-plan.js";
 import { GAMES, jackpotCount, quietCount } from "./games.js";
 import { createStage } from "./reveal.js";
 import { hasConsecutive, randomBelow, sampleTicket } from "./sample.js";
+import {
+  isInShortlist,
+  loadShortlist,
+  ticketKey,
+  toggleShortlist,
+  updateShortlist,
+} from "./shortlist.js";
 import { buildTrend } from "./trend.js";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -10,6 +17,8 @@ const numberFormat = new Intl.NumberFormat("zh-CN");
 const state = {
   game: "ssq",
   tab: "pick",
+  shortlistGame: "ssq",
+  shortlistEdit: null,
   avoid: true,
   pool: "main",
   windowSize: 30,
@@ -28,6 +37,7 @@ const historyList = document.querySelector("#history-list");
 const historyMeta = document.querySelector("#history-meta");
 const historyMore = document.querySelector("#history-more");
 const poolSwitch = document.querySelector("#pool-switch");
+const shortlistNode = document.querySelector("#shortlist");
 const stageNode = document.querySelector("#stage");
 const stageLabel = document.querySelector("#stage-label");
 const reveal = createStage(document.querySelector("#stage-canvas"));
@@ -107,18 +117,247 @@ function hideMachine() {
   reveal?.pause();
 }
 
-function renderTickets() {
+function applyShortlistButton(button, saved) {
+  button.setAttribute("aria-pressed", String(saved));
+  button.textContent = saved ? "取消备选" : "加入备选";
+}
+
+function shortlistToggleButton(gameId, ticket, onChange) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "shortlist-toggle";
+  applyShortlistButton(button, isInShortlist(gameId, ticket));
+  button.addEventListener("click", () => {
+    const saved = toggleShortlist(gameId, ticket);
+    applyShortlistButton(button, saved);
+    onChange?.(saved);
+  });
+  return button;
+}
+
+function renderTickets({ animate = true } = {}) {
   hideMachine();
   const list = state.tickets[state.game];
   ticketsNode.replaceChildren();
   list.forEach((ticket, index) => {
     const card = document.createElement("article");
-    card.className = "ticket enter";
+    card.className = animate ? "ticket enter" : "ticket";
+    const head = document.createElement("div");
+    head.className = "ticket-head";
     const label = document.createElement("p");
     label.className = "ticket-index";
     label.textContent = `第 ${index + 1} 注`;
-    card.append(label, ballRow(ticket));
+    head.append(label, shortlistToggleButton(state.game, ticket));
+    card.append(head, ballRow(ticket));
     ticketsNode.append(card);
+  });
+}
+
+function activeGameId() {
+  return state.tab === "shortlist" ? state.shortlistGame : state.game;
+}
+
+function syncGameSeg() {
+  const current = activeGameId();
+  app.dataset.game = current;
+  document.querySelectorAll("button[data-game]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.game === current));
+  });
+}
+
+function clearShortlistEdit() {
+  state.shortlistEdit = null;
+}
+
+function startShortlistEdit(ticket) {
+  state.shortlistEdit = {
+    original: { main: [...ticket.main], extra: [...ticket.extra] },
+    draft: { main: [...ticket.main], extra: [...ticket.extra] },
+    selected: null,
+    message: null,
+  };
+  renderShortlist();
+}
+
+function shortlistActionButton(label, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function editableBallRow(draft, selected, onSelect) {
+  const row = document.createElement("div");
+  row.className = "balls is-editing";
+  draft.main.forEach((number, index) => {
+    const node = ball(number, "main");
+    node.classList.add("is-editable");
+    if (selected?.zone === "main" && selected.index === index) {
+      node.classList.add("is-selected");
+    }
+    node.tabIndex = 0;
+    node.setAttribute("role", "button");
+    node.addEventListener("click", () => onSelect({ zone: "main", index }));
+    row.append(node);
+  });
+  draft.extra.forEach((number, index) => {
+    const node = ball(number, "extra");
+    node.classList.add("is-editable");
+    if (index === 0) node.classList.add("lead");
+    if (selected?.zone === "extra" && selected.index === index) {
+      node.classList.add("is-selected");
+    }
+    node.tabIndex = 0;
+    node.setAttribute("role", "button");
+    node.addEventListener("click", () => onSelect({ zone: "extra", index }));
+    row.append(node);
+  });
+  return row;
+}
+
+function shortlistPicker(gameConfig, draft, selected, onPick) {
+  const panel = document.createElement("div");
+  panel.className = "shortlist-picker";
+  if (!selected) {
+    const hint = document.createElement("p");
+    hint.className = "shortlist-hint";
+    hint.textContent = "先点要改的号码，再在下方选择新数字。";
+    panel.append(hint);
+    return panel;
+  }
+  const isMain = selected.zone === "main";
+  const max = isMain ? gameConfig.mainMax : gameConfig.extraMax;
+  const used = new Set(isMain ? draft.main : draft.extra);
+  const current = (isMain ? draft.main : draft.extra)[selected.index];
+  const title = document.createElement("p");
+  title.className = "shortlist-hint";
+  title.textContent = `替换${isMain ? gameConfig.mainName : gameConfig.extraName} ${pad(current)}`;
+  const strip = document.createElement("div");
+  strip.className = "pick-strip";
+  strip.dataset.zone = selected.zone;
+  for (let number = 1; number <= max; number += 1) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = pad(number);
+    button.className = "pick-num";
+    if (number === current) button.classList.add("is-current");
+    if (used.has(number) && number !== current) {
+      button.disabled = true;
+    } else {
+      button.addEventListener("click", () => onPick(number));
+    }
+    strip.append(button);
+  }
+  panel.append(title, strip);
+  return panel;
+}
+
+function renderShortlist() {
+  syncGameSeg();
+  const gameId = state.shortlistGame;
+  const gameConfig = GAMES[gameId];
+  const list = loadShortlist(gameId);
+  const edit = state.shortlistEdit;
+  if (edit) {
+    const stillThere = list.some(
+      (entry) => ticketKey(entry) === ticketKey(edit.original),
+    );
+    if (!stillThere) clearShortlistEdit();
+  }
+  shortlistNode.replaceChildren();
+  if (!list.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "还没有备选号码。在选号页点「加入备选」即可收藏到这里。";
+    shortlistNode.append(empty);
+    return;
+  }
+  list.forEach((ticket, index) => {
+    const card = document.createElement("article");
+    card.className = "ticket";
+    const head = document.createElement("div");
+    head.className = "ticket-head";
+    const label = document.createElement("p");
+    label.className = "ticket-index";
+    label.textContent = `备选 ${index + 1}`;
+    const actions = document.createElement("div");
+    actions.className = "ticket-actions";
+    const editing =
+      state.shortlistEdit
+      && ticketKey(state.shortlistEdit.original) === ticketKey(ticket);
+
+    if (editing) {
+      const draft = state.shortlistEdit.draft;
+      actions.append(
+        shortlistActionButton("完成", "shortlist-edit is-primary", () => {
+          const result = updateShortlist(gameId, state.shortlistEdit.original, draft);
+          if (!result.ok) {
+            state.shortlistEdit.message =
+              result.reason === "duplicate" ? "该号码已在备选中" : "保存失败，请重试";
+            renderShortlist();
+            return;
+          }
+          clearShortlistEdit();
+          renderShortlist();
+        }),
+        shortlistActionButton("取消", "shortlist-edit", () => {
+          clearShortlistEdit();
+          renderShortlist();
+        }),
+      );
+      head.append(label, actions);
+      card.append(
+        head,
+        editableBallRow(draft, state.shortlistEdit.selected, (selected) => {
+          state.shortlistEdit.selected = selected;
+          state.shortlistEdit.message = null;
+          renderShortlist();
+        }),
+      );
+      if (state.shortlistEdit.message) {
+        const message = document.createElement("p");
+        message.className = "shortlist-error";
+        message.textContent = state.shortlistEdit.message;
+        card.append(message);
+      }
+      card.append(
+        shortlistPicker(gameConfig, draft, state.shortlistEdit.selected, (number) => {
+          const zone = state.shortlistEdit.selected.zone;
+          const at = state.shortlistEdit.selected.index;
+          const next = [...(zone === "main" ? draft.main : draft.extra)];
+          next[at] = number;
+          next.sort((a, b) => a - b);
+          if (zone === "main") draft.main = next;
+          else draft.extra = next;
+          const newIndex = next.indexOf(number);
+          state.shortlistEdit.selected = { zone, index: newIndex };
+          state.shortlistEdit.message = null;
+          renderShortlist();
+        }),
+      );
+    } else {
+      actions.append(
+        shortlistActionButton("编辑", "shortlist-edit", () => {
+          startShortlistEdit(ticket);
+        }),
+        shortlistToggleButton(gameId, ticket, (saved) => {
+          if (!saved) {
+            if (
+              state.shortlistEdit
+              && ticketKey(state.shortlistEdit.original) === ticketKey(ticket)
+            ) {
+              clearShortlistEdit();
+            }
+            renderShortlist();
+          }
+        }),
+      );
+      head.append(label, actions);
+      card.append(head, ballRow(ticket));
+    }
+    shortlistNode.append(card);
   });
 }
 
@@ -260,11 +499,7 @@ function renderHistory() {
 }
 
 function renderGameChrome() {
-  app.dataset.game = state.game;
-  document.querySelector("#game-title").textContent = game().name;
-  document.querySelectorAll("button[data-game]").forEach((button) => {
-    button.setAttribute("aria-pressed", String(button.dataset.game === state.game));
-  });
+  syncGameSeg();
   renderPoolSwitch();
   renderLatest();
   renderTickets();
@@ -278,11 +513,20 @@ function showTab(tab) {
   document.querySelector("#panel-pick").hidden = tab !== "pick";
   document.querySelector("#panel-trend").hidden = tab !== "trend";
   document.querySelector("#panel-history").hidden = tab !== "history";
+  document.querySelector("#panel-shortlist").hidden = tab !== "shortlist";
   document.querySelectorAll("[data-tab]").forEach((button) => {
     if (button.dataset.tab === tab) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
   window.scrollTo(0, 0);
+  if (tab !== "shortlist") clearShortlistEdit();
+  if (tab === "shortlist") renderShortlist();
+  else syncGameSeg();
+  if (tab === "pick") {
+    const list = state.tickets[state.game];
+    if (!stageNode.hidden && list[0]) renderDrawResult(list[0], { animate: false });
+    else if (stageNode.hidden && list.length) renderTickets({ animate: false });
+  }
   if (tab !== "pick") reveal?.pause();
   else if (!stageNode.hidden) reveal?.resume();
 }
@@ -298,6 +542,19 @@ function remember(ticket) {
   summary.className = "visually-hidden";
   summary.textContent = numbered(ticket).map((item) => pad(item.number)).join(" ");
   ticketsNode.replaceChildren(summary);
+}
+
+function renderDrawResult(ticket, { animate = true } = {}) {
+  const card = document.createElement("article");
+  card.className = animate ? "ticket enter" : "ticket";
+  const head = document.createElement("div");
+  head.className = "ticket-head";
+  const label = document.createElement("p");
+  label.className = "ticket-index";
+  label.textContent = "第 1 注";
+  head.append(label, shortlistToggleButton(state.game, ticket));
+  card.append(head, ballRow(ticket));
+  ticketsNode.replaceChildren(card);
 }
 
 function setActionBusy(activeButton) {
@@ -346,6 +603,7 @@ async function generateDraw() {
       stageNode.classList.remove("drawing");
       stageLabel.textContent = "第 1 注";
       await reveal.show(numbered(ticket), palette());
+      if (token === actionToken) renderDrawResult(ticket);
       return;
     }
     const current = game();
@@ -360,6 +618,7 @@ async function generateDraw() {
       { onLabel: (text) => { stageLabel.textContent = text; } },
     );
     if (token !== actionToken || status !== "done") return;
+    renderDrawResult(ticket);
   } finally {
     if (token === actionToken) clearActionBusy();
   }
@@ -368,8 +627,16 @@ async function generateDraw() {
 function bind() {
   document.querySelectorAll("button[data-game]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.dataset.game === state.game) return;
-      state.game = button.dataset.game;
+      const next = button.dataset.game;
+      if (state.tab === "shortlist") {
+        if (next === state.shortlistGame) return;
+        state.shortlistGame = next;
+        clearShortlistEdit();
+        renderShortlist();
+        return;
+      }
+      if (next === state.game) return;
+      state.game = next;
       state.pool = "main";
       state.historyShown = 40;
       renderGameChrome();

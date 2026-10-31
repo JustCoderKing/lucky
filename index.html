@@ -12,7 +12,6 @@
     <div class="app" id="app" data-game="ssq">
       <header class="top">
         <p class="eyebrow">等概率机选</p>
-        <h1 id="game-title">双色球</h1>
         <div class="seg" role="group" aria-label="玩法">
           <button type="button" data-game="ssq" aria-pressed="true">双色球</button>
           <button type="button" data-game="dlt" aria-pressed="false">大乐透</button>
@@ -53,12 +52,29 @@
           <div id="history-list" class="history"></div>
           <button type="button" id="history-more" class="more">继续加载</button>
         </section>
+
+        <section id="panel-shortlist" aria-label="备选" hidden>
+          <div id="shortlist" class="shortlist" aria-live="polite"></div>
+        </section>
       </main>
 
       <nav class="nav" aria-label="栏目">
-        <button type="button" data-tab="pick" aria-current="page">选号</button>
-        <button type="button" data-tab="trend">走势</button>
-        <button type="button" data-tab="history">历史</button>
+        <button type="button" data-tab="pick" aria-current="page">
+          <span class="nav-glyph" data-icon="pick" aria-hidden="true"></span>
+          <span class="nav-label">选号</span>
+        </button>
+        <button type="button" data-tab="trend">
+          <span class="nav-glyph" data-icon="trend" aria-hidden="true"></span>
+          <span class="nav-label">走势</span>
+        </button>
+        <button type="button" data-tab="history">
+          <span class="nav-glyph" data-icon="history" aria-hidden="true"></span>
+          <span class="nav-label">历史</span>
+        </button>
+        <button type="button" data-tab="shortlist">
+          <span class="nav-glyph" data-icon="shortlist" aria-hidden="true"></span>
+          <span class="nav-label">备选</span>
+        </button>
       </nav>
     </div>
     <script type="module" src="./js/app.js"></script>
