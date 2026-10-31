@@ -21,24 +21,16 @@
 
       <main>
         <section id="panel-pick" aria-label="选号">
-          <article class="latest card" id="latest"></article>
-          <label class="avoid">
-            <span>
-              <strong>避免连号</strong>
-              <small id="avoid-hint">红球不出现相邻号码</small>
-            </span>
-            <input id="avoid" type="checkbox" checked />
-          </label>
           <div class="actions">
-            <button type="button" id="gen-one">生成 1 注</button>
-            <button type="button" id="gen-five" class="ghost">生成 5 注</button>
-            <button type="button" id="gen-draw" class="machine">摇号</button>
+            <button type="button" id="gen-five" class="action">生成 5 注</button>
+            <button type="button" id="gen-draw" class="action machine">摇号</button>
           </div>
           <div id="stage" class="stage" hidden>
             <canvas id="stage-canvas" aria-hidden="true"></canvas>
             <p id="stage-label" class="stage-label">第 1 注</p>
           </div>
           <div id="tickets" class="tickets" aria-live="polite"></div>
+          <article class="latest card" id="latest" aria-label="上期中奖号码"></article>
           <p id="odds" class="odds"></p>
           <p id="note" class="note"></p>
         </section>

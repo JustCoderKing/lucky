@@ -86,6 +86,9 @@ function ballRow(ticket) {
 function renderLatest() {
   const draw = draws()[0];
   latestNode.replaceChildren();
+  const title = document.createElement("p");
+  title.className = "latest-title";
+  title.textContent = "上期中奖号码";
   const meta = document.createElement("div");
   meta.className = "meta";
   const date = document.createElement("strong");
@@ -94,42 +97,20 @@ function renderLatest() {
   const issue = document.createElement("span");
   issue.textContent = periodLabel(draw.issue);
   meta.append(date, issue);
-  latestNode.append(meta, ballRow(draw));
+  latestNode.append(title, meta, ballRow(draw));
 }
 
-function poolItems(current) {
-  const items = [];
-  for (let number = 1; number <= current.mainMax; number += 1) {
-    items.push({ number, zone: "main" });
-  }
-  for (let number = 1; number <= current.extraMax; number += 1) {
-    items.push({ number, zone: "extra" });
-  }
-  return items;
-}
-
-function showMachine() {
-  if (!reveal) {
-    stageNode.hidden = true;
-    return;
-  }
-  stageNode.hidden = false;
-  stageNode.classList.add("drawing");
-  stageLabel.textContent = "全部号码";
-  reveal.preview(poolItems(game()), palette());
+function hideMachine() {
+  stageNode.classList.remove("drawing");
+  stageNode.hidden = true;
+  reveal?.stopDraw();
+  reveal?.pause();
 }
 
 function renderTickets() {
-  showMachine();
+  hideMachine();
   const list = state.tickets[state.game];
   ticketsNode.replaceChildren();
-  if (list.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "empty";
-    empty.textContent = "点下面的按钮，生成一注号码。";
-    ticketsNode.append(empty);
-    return;
-  }
   list.forEach((ticket, index) => {
     const card = document.createElement("article");
     card.className = "ticket enter";
@@ -160,12 +141,8 @@ function renderOdds() {
   const current = game();
   const jackpot = jackpotCount(current);
   oddsNode.textContent = `一等奖概率 1/${numberFormat.format(jackpot)}`;
-  if (state.avoid) {
-    const quiet = quietCount(current);
-    noteNode.textContent = `避免连号已打开，只在 ${numberFormat.format(quiet)} 种不含相邻号码的组合里均匀抽取。这一注中一等奖的概率是 1/${numberFormat.format(jackpot)}。`;
-  } else {
-    noteNode.textContent = "每次从全部合法组合中等概率抽取。走势和历史开奖不参与选号。";
-  }
+  const quiet = quietCount(current);
+  noteNode.textContent = `只在 ${numberFormat.format(quiet)} 种不含相邻号码的组合里均匀抽取。这一注中一等奖的概率是 1/${numberFormat.format(jackpot)}。`;
 }
 
 function renderPoolSwitch() {
@@ -285,8 +262,6 @@ function renderHistory() {
 function renderGameChrome() {
   app.dataset.game = state.game;
   document.querySelector("#game-title").textContent = game().name;
-  document.querySelector("#avoid-hint").textContent =
-    state.game === "ssq" ? "红球不出现相邻号码" : "前区和后区都不出现相邻号码";
   document.querySelectorAll("button[data-game]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.game === state.game));
   });
@@ -313,7 +288,7 @@ function showTab(tab) {
 }
 
 function actionButtons() {
-  return document.querySelectorAll("#gen-one, #gen-five, #gen-draw");
+  return document.querySelectorAll("#gen-five, #gen-draw");
 }
 
 let actionToken = 0;
@@ -325,40 +300,38 @@ function remember(ticket) {
   ticketsNode.replaceChildren(summary);
 }
 
-async function generate(count) {
-  const token = ++actionToken;
+function setActionBusy(activeButton) {
   actionButtons().forEach((button) => {
     button.disabled = true;
+    button.classList.toggle("is-pressed", button === activeButton);
   });
+}
+
+function clearActionBusy() {
+  actionButtons().forEach((button) => {
+    button.disabled = false;
+    button.classList.remove("is-pressed");
+  });
+}
+
+async function generate(count) {
+  const token = ++actionToken;
+  setActionBusy(document.querySelector("#gen-five"));
   try {
     const next = [];
     for (let index = 0; index < count; index += 1) {
       next.push(sampleTicket(game(), state.avoid));
     }
     state.tickets[state.game] = next;
-    if (count === 1 && reveal) {
-      remember(next[0]);
-      stageNode.classList.remove("drawing");
-      stageNode.hidden = false;
-      stageLabel.textContent = "第 1 注";
-      await reveal.show(numbered(next[0]), palette());
-    } else {
-      renderTickets();
-    }
+    renderTickets();
   } finally {
-    if (token === actionToken) {
-      actionButtons().forEach((button) => {
-        button.disabled = false;
-      });
-    }
+    if (token === actionToken) clearActionBusy();
   }
 }
 
 async function generateDraw() {
   const token = ++actionToken;
-  actionButtons().forEach((button) => {
-    button.disabled = true;
-  });
+  setActionBusy(document.querySelector("#gen-draw"));
   try {
     const ticket = sampleTicket(game(), state.avoid);
     state.tickets[state.game] = [ticket];
@@ -388,11 +361,7 @@ async function generateDraw() {
     );
     if (token !== actionToken || status !== "done") return;
   } finally {
-    if (token === actionToken) {
-      actionButtons().forEach((button) => {
-        button.disabled = false;
-      });
-    }
+    if (token === actionToken) clearActionBusy();
   }
 }
 
@@ -419,13 +388,6 @@ function bind() {
       renderTrend();
     });
   });
-  document.querySelector("#avoid").addEventListener("change", (event) => {
-    state.avoid = event.target.checked;
-    state.tickets[state.game] = [];
-    renderTickets();
-    renderOdds();
-  });
-  document.querySelector("#gen-one").addEventListener("click", () => generate(1));
   document.querySelector("#gen-five").addEventListener("click", () => generate(5));
   document.querySelector("#gen-draw").addEventListener("click", () => generateDraw());
   historyMore.addEventListener("click", () => {

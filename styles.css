@@ -109,17 +109,25 @@ main {
   min-height: 0;
 }
 
-.card, .ticket, .avoid, .draw {
+.card, .ticket, .draw {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
 }
 
-.latest, .avoid, .tickets, .actions, .odds, .note, .toolbar, .scroll-hint {
+.latest, .tickets, .actions, .odds, .note, .toolbar, .scroll-hint {
   margin-bottom: 12px;
 }
 
 .latest { padding: 12px 14px; }
+
+.latest-title {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
 
 .meta {
   display: flex;
@@ -176,64 +184,59 @@ main {
   border: 0;
 }
 
-.avoid {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 64px;
-  padding: 10px 14px;
-}
-
-.avoid strong, .avoid small { display: block; }
-.avoid small {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.avoid input {
-  width: 28px;
-  height: 28px;
-  accent-color: var(--ink);
-  flex: none;
-}
-
 .actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
 .actions button, .more {
   min-height: 48px;
   border-radius: 14px;
-  border: 0;
-  background: var(--main);
-  color: #fff;
-  font-weight: 700;
-}
-
-.actions button.ghost, .more {
+  border: 1px solid var(--line);
   background: transparent;
   color: var(--ink);
-  border: 1px solid var(--line);
+  font-weight: 700;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
 }
 
-.actions button:disabled {
+.actions .action {
+  border-color: color-mix(in srgb, var(--main) 75%, white);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--main) 18%, transparent);
+}
+
+.actions .action:hover {
+  border-color: color-mix(in srgb, var(--main) 90%, white);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--main) 28%, transparent);
+}
+
+.actions .action:active,
+.actions .action.is-pressed {
+  color: #fff;
+  background: var(--main);
+  border-color: var(--main);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--main) 42%, transparent);
+  transform: scale(0.98);
+}
+
+.actions .action:disabled {
   opacity: 0.55;
 }
 
-.actions .machine {
-  grid-column: 1 / -1;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--main) 75%, white);
-  box-shadow: 0 0 22px color-mix(in srgb, var(--main) 28%, transparent);
+.actions .action:disabled.is-pressed {
+  opacity: 1;
 }
 
 .more {
   width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
 }
 
 .stage {
